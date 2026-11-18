@@ -68,10 +68,16 @@ async function run() {
     },
   });
 
-  // 4. Copy manifest.json to dist
+  // 4. Copy manifest.json & icons to dist
   const manifestSrc = resolve(root, 'public/manifest.json');
   const manifestDest = resolve(root, 'dist/manifest.json');
   fs.copyFileSync(manifestSrc, manifestDest);
+
+  const iconsSrc = resolve(root, 'public/icons');
+  const iconsDest = resolve(root, 'dist/icons');
+  if (fs.existsSync(iconsSrc)) {
+    fs.cpSync(iconsSrc, iconsDest, { recursive: true });
+  }
 
   console.log('✅ Chrome Extension build finished successfully! Ready in /dist');
 }

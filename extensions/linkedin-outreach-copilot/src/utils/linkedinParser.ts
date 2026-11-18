@@ -6,7 +6,7 @@ export function isLinkedInProfileUrl(): boolean {
 
 export function parseLinkedInProfile(): LinkedInProfile | null {
   const isProfile = isLinkedInProfileUrl();
-  const cleanUrl = window.location.href.split('?')[0];
+  const cleanUrl = window.location.href.split('?')[0].replace(/\/overlay\/.*$/, '').replace(/\/$/, '');
 
   // 1. Try extracting name from DOM
   const nameSelectors = [
@@ -147,8 +147,8 @@ export function parseLinkedInProfile(): LinkedInProfile | null {
 }
 
 /**
- * Automates opening the native LinkedIn "Contact info" modal,
- * extracting the real email, phone, and websites, and closing the modal.
+ * Reads the native LinkedIn "Contact info" modal when opened by user.
+ * Explicitly does NOT click dismiss so modal remains stable and visible for the user.
  */
 export async function scrapeLinkedInContactInfoModal(): Promise<{
   email?: string;
@@ -157,22 +157,27 @@ export async function scrapeLinkedInContactInfoModal(): Promise<{
   twitter?: string;
   privacyRestricted: boolean;
 }> {
-  const contactInfoLink = document.querySelector<HTMLAnchorElement>(
-    'a#top-card-text-details-contact-info, a[href*="/overlay/contact-info/"]'
-  );
+  // Check if modal is already open
+  let modal = document.querySelector('.artdeco-modal, .pv-profile-section__section-info');
 
-  if (!contactInfoLink) {
-    return { websites: [], privacyRestricted: true };
-  }
+  if (!modal) {
+    const contactInfoLink = document.querySelector<HTMLAnchorElement>(
+      'a#top-card-text-details-contact-info, a[href*="/overlay/contact-info/"]'
+    );
 
-  // Click native link to open Contact Info dialog
-  contactInfoLink.click();
+    if (!contactInfoLink) {
+      return { websites: [], privacyRestricted: true };
+    }
 
-  // Wait up to 1.5 seconds for modal to appear
-  for (let i = 0; i < 15; i++) {
-    await new Promise((r) => setTimeout(r, 100));
-    const modal = document.querySelector('.artdeco-modal, .pv-profile-section__section-info');
-    if (modal) break;
+    // Trigger click on contact info anchor
+    contactInfoLink.click();
+
+    // Wait up to 1.5 seconds for modal to appear
+    for (let i = 0; i < 15; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      modal = document.querySelector('.artdeco-modal, .pv-profile-section__section-info');
+      if (modal) break;
+    }
   }
 
   // Extract Email
@@ -202,14 +207,7 @@ export async function scrapeLinkedInContactInfoModal(): Promise<{
     if (el.href && !websites.includes(el.href)) websites.push(el.href);
   });
 
-  // Automatically dismiss the modal so user experience is seamless
-  const closeBtn = document.querySelector<HTMLButtonElement>(
-    '.artdeco-modal__dismiss, button[aria-label="Dismiss"]'
-  );
-  if (closeBtn) {
-    closeBtn.click();
-  }
-
+  // DO NOT auto-dismiss: Leave modal open so user can inspect or close at will
   return {
     email: email || undefined,
     phone: phone || undefined,

@@ -11,7 +11,7 @@ export interface ContactEnrichmentResult {
   sourceNote: string;
   deliverabilityGrade?: string;
   mxRecord?: MXRecordResult;
-  osintDorks?: OSINTDork[];
+  osintDorks: OSINTDork[];
 }
 
 export function guessCompanyDomain(companyName: string): string {
@@ -29,8 +29,8 @@ export function guessCompanyDomain(companyName: string): string {
 
 /**
  * 100% Free Verification Engine:
- * Method A: Live DNS MX Record Verification via Google DoH.
- * Method B: Google Search OSINT Dorking.
+ * Method A: Live DNS MX Record Verification via Google DNS-over-HTTPS.
+ * Method B: Google Search OSINT Dorking with 1-click execution.
  */
 export async function enrichContactInfo(
   profile: LinkedInProfile,
@@ -43,8 +43,8 @@ export async function enrichContactInfo(
   const lastName = (names[names.length - 1] || '').toLowerCase().replace(/[^a-z]/g, '');
   const patternEmail = domain && firstName ? (lastName ? `${firstName}.${lastName}@${domain}` : `${firstName}@${domain}`) : undefined;
 
-  // Generate Method B OSINT Dorks
-  const osintDorks = domain ? generateOSINTDorks(profile.name, profile.company || '', domain) : [];
+  // Generate Method B OSINT Dorks (Always available!)
+  const osintDorks = generateOSINTDorks(profile.name, profile.company || '', domain);
 
   // Method A: Check Domain MX Records via DNS-over-HTTPS (100% Free)
   let mxRecord: MXRecordResult | undefined;

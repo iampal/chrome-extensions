@@ -1,8 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "LinkedIn Outreach Copilot - AI Icebreakers & Lead Exporter",
-  "version": "2.1.0",
-  "description": "Generate hyper-personalized cold outreach sequences, verify corporate emails via DNS/MX, and 1-click export leads from LinkedIn.",
+  "name": "LinkedIn Outreach Copilot - AI Multi-Channel Sequences",
+  "version": "2.2.0",
+  "description": "Enterprise multi-channel outreach engine: DNS/MX email verification, Google OSINT dorking, and personalized sequences for LinkedIn.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LinkedIn Outreach Copilot",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
   "permissions": [
     "storage",
     "activeTab",
@@ -16,10 +30,6 @@
     "https://generativelanguage.googleapis.com/*",
     "https://api.openai.com/*"
   ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "LinkedIn Outreach Copilot"
-  },
   "background": {
     "service_worker": "background.js",
     "type": "module"
