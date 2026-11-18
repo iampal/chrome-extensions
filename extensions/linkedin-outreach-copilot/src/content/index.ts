@@ -16,6 +16,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
   let isOpen = false;
   let activeTab: 'sequence' | 'icebreakers' = 'sequence';
   let activeProfile: LinkedInProfile | null = null;
+  let lastScannedUrl = '';
   let currentSequence: OutreachSequence | null = null;
   let currentHooks: GeneratedIcebreaker[] = [];
   let currentContact: ContactEnrichmentResult | null = null;
@@ -23,7 +24,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
   let isGenerating = false;
   let isExtractingContact = false;
 
-  // Load settings
+  // Load settings once
   getSettings().then((s) => {
     settings = s;
   });
@@ -51,7 +52,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
 
-    /* Floating Launcher Button */
+    /* Stable Floating Launcher Button */
     .copilot-launcher {
       position: fixed;
       bottom: 24px;
@@ -68,13 +69,12 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       cursor: pointer;
       font-weight: 700;
       font-size: 14px;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       user-select: none;
       z-index: 2147483647;
+      transition: transform 0.15s ease;
     }
     .copilot-launcher:hover {
-      transform: scale(1.06);
-      box-shadow: 0 14px 28px -3px rgba(10, 102, 194, 0.7);
+      transform: scale(1.05);
     }
     .copilot-badge-dot {
       width: 8px;
@@ -84,7 +84,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       box-shadow: 0 0 6px #4ade80;
     }
 
-    /* Drawer */
+    /* Apollo-style Docked Drawer */
     .copilot-drawer {
       position: fixed;
       top: 64px;
@@ -98,12 +98,12 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       flex-direction: column;
       overflow: hidden;
       z-index: 2147483647;
-      animation: copilotSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      animation: copilotFadeIn 0.15s ease-out;
     }
 
-    @keyframes copilotSlideIn {
-      from { opacity: 0; transform: translateY(-10px) scale(0.98); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
+    @keyframes copilotFadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .copilot-header {
@@ -225,7 +225,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 5px 0;
+      padding: 6px 0;
       border-bottom: 1px dashed #e2e8f0;
       font-size: 12px;
     }
@@ -265,7 +265,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
     .copilot-extract-btn {
       width: 100%;
       margin-top: 8px;
-      padding: 6px;
+      padding: 7px;
       background: #ffffff;
       border: 1px solid #0a66c2;
       color: #0a66c2;
@@ -277,7 +277,6 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       align-items: center;
       justify-content: center;
       gap: 4px;
-      transition: all 0.15s;
     }
     .copilot-extract-btn:hover {
       background: #eff6ff;
@@ -301,7 +300,6 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       cursor: pointer;
       text-align: center;
       border-bottom: 2px solid transparent;
-      transition: all 0.15s;
     }
     .copilot-tab.active {
       color: #0a66c2;
@@ -330,7 +328,6 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       align-items: center;
       justify-content: center;
       gap: 6px;
-      transition: background 0.15s;
     }
     .copilot-btn-primary:hover {
       background: #004182;
@@ -347,7 +344,6 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       display: flex;
       align-items: center;
       gap: 6px;
-      transition: all 0.15s;
     }
     .copilot-btn-secondary:hover {
       background: #e2e8f0;
@@ -444,19 +440,15 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       </div>
     `;
 
-    wrapper.querySelector('#copilot-launch-btn')?.addEventListener('click', async () => {
+    wrapper.querySelector('#copilot-launch-btn')?.addEventListener('click', () => {
       isOpen = true;
-      await detectProfile();
+      scanPageOnce();
       renderDrawer();
     });
   }
 
   function renderDrawer() {
-    if (!activeProfile) {
-      detectProfile();
-    }
-
-    const p = activeProfile;
+    const p = activeProfile || parseLinkedInProfile();
 
     if (!p) {
       wrapper.innerHTML = `
@@ -470,9 +462,9 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
           </div>
           <div style="padding: 24px; text-align: center; color: #475569;">
             <div style="font-size: 32px; margin-bottom: 8px;">👤</div>
-            <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px; color: #0f172a;">No LinkedIn Profile Detected</div>
+            <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px; color: #0f172a;">No Profile Detected</div>
             <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0;">
-              Please open any LinkedIn profile page (e.g. <code>https://www.linkedin.com/in/...</code>) to extract real contact info and generate your outreach sequence.
+              Please open any LinkedIn profile page (e.g. <code>https://www.linkedin.com/in/...</code>) to extract contact info and generate sequences.
             </p>
           </div>
           <div class="copilot-footer">
@@ -497,7 +489,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
         <div class="copilot-header">
           <div class="copilot-title">
             <span>⚡</span>
-            <span>Outreach Copilot (RocketReach+)</span>
+            <span>Outreach Copilot</span>
           </div>
           <button class="copilot-close-btn" id="copilot-close-btn">✕</button>
         </div>
@@ -537,7 +529,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
               ${
                 contact?.email
                   ? `<span id="contact-email-val">${contact.email}</span>`
-                  : `<span class="copilot-contact-empty">Not publicly displayed</span>`
+                  : `<span class="copilot-contact-empty">Click reveal below</span>`
               }
             </div>
             ${contact?.email ? '<button class="copilot-contact-copy-btn" id="copy-email-btn">Copy</button>' : ''}
@@ -555,8 +547,9 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
             ${contact?.phone ? '<button class="copilot-contact-copy-btn" id="copy-phone-btn">Copy</button>' : ''}
           </div>
 
+          <!-- Safe Manual Button: Only runs when user clicks it -->
           <button class="copilot-extract-btn" id="extract-modal-btn">
-            ${isExtractingContact ? '⏳ Scanning Contact Info...' : '⚡ Scan LinkedIn Contact Info Modal'}
+            ${isExtractingContact ? '⏳ Checking Contact Info...' : '🔍 Reveal Public Contact Info (Manual)'}
           </button>
         </div>
 
@@ -690,7 +683,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       renderDrawer();
     });
 
-    // Native modal scan
+    // Manual Contact Info click (ONLY runs when explicitly clicked by user)
     wrapper.querySelector('#extract-modal-btn')?.addEventListener('click', async () => {
       if (isExtractingContact) return;
       isExtractingContact = true;
@@ -699,7 +692,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       try {
         currentContact = await enrichContactInfo(p, settings, true);
       } catch (err) {
-        console.error('Failed to extract modal contact info:', err);
+        console.error('Manual contact info check failed:', err);
       } finally {
         isExtractingContact = false;
         renderDrawer();
@@ -862,69 +855,28 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
     }
   }
 
-  // Detect profile from page
-  async function detectProfile() {
+  // Pure URL check with zero automated clicking
+  async function scanPageOnce() {
+    const currentUrl = window.location.href.split('?')[0];
+    if (currentUrl === lastScannedUrl && activeProfile) {
+      return;
+    }
+    lastScannedUrl = currentUrl;
+
     const parsed = parseLinkedInProfile();
     if (parsed) {
-      if (parsed.profileUrl !== activeProfile?.profileUrl) {
-        activeProfile = parsed;
-        currentSequence = null;
-        currentHooks = [];
-        currentContact = await enrichContactInfo(parsed, settings, false);
-      }
+      activeProfile = parsed;
+      currentSequence = null;
+      currentHooks = [];
+      // Clean pattern enrichment: zero automated clicks
+      currentContact = await enrichContactInfo(parsed, settings, false);
     } else {
       activeProfile = null;
       currentContact = null;
     }
   }
 
-  // Inject a native "Save Lead" button directly into LinkedIn profile's action row!
-  function injectNativeProfileButton() {
-    if (!isLinkedInProfileUrl()) return;
-
-    const BUTTON_ID = 'linkedin-copilot-injected-save-btn';
-    if (document.getElementById(BUTTON_ID)) return;
-
-    const targetRow = document.querySelector(
-      '.pvs-profile-actions, .pv-top-card-v2-ctas, div.ph5 .display-flex.align-items-center.mt2, main section .display-flex:has(button.artdeco-button)'
-    );
-
-    if (targetRow) {
-      const btn = document.createElement('button');
-      btn.id = BUTTON_ID;
-      btn.type = 'button';
-      btn.innerHTML = '⚡ <b>Save Lead & Sequence</b>';
-      btn.style.cssText = `
-        background: linear-gradient(135deg, #0a66c2 0%, #004182 100%);
-        color: #ffffff;
-        border: none;
-        border-radius: 16px;
-        padding: 6px 14px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        margin-left: 8px;
-        box-shadow: 0 2px 4px rgba(10, 102, 194, 0.25);
-        z-index: 100;
-        transition: transform 0.15s;
-      `;
-
-      btn.addEventListener('mouseenter', () => (btn.style.transform = 'scale(1.03)'));
-      btn.addEventListener('mouseleave', () => (btn.style.transform = 'scale(1)'));
-      btn.addEventListener('click', async () => {
-        isOpen = true;
-        await detectProfile();
-        renderDrawer();
-      });
-
-      targetRow.appendChild(btn);
-    }
-  }
-
-  // Append host to DOM
+  // Append host to DOM once
   function mount() {
     if (!document.body) {
       setTimeout(mount, 50);
@@ -933,18 +885,17 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
     document.body.appendChild(host);
     renderLauncher();
 
+    // Check only on URL changes (every 2s), without touching the DOM or clicking anything
+    let lastPath = window.location.pathname;
     setInterval(() => {
-      detectProfile();
-      injectNativeProfileButton();
+      if (window.location.pathname !== lastPath) {
+        lastPath = window.location.pathname;
+        scanPageOnce();
+        if (isOpen) renderDrawer();
+      }
     }, 1500);
 
-    const observer = new MutationObserver(() => {
-      detectProfile();
-      injectNativeProfileButton();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    console.log('⚡ LinkedIn Outreach Copilot successfully attached to DOM.');
+    console.log('⚡ LinkedIn Outreach Copilot stable mount ready.');
   }
 
   if (document.readyState === 'loading') {
