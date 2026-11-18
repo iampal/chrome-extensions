@@ -119,17 +119,37 @@ export async function deleteLead(id: string): Promise<void> {
 export function exportLeadsToCSV(leads: SavedLead[]): string {
   if (!leads.length) return '';
 
-  const headers = ['Name', 'Email', 'Phone', 'Confidence', 'Headline', 'Company', 'Profile URL', 'Selected Icebreaker', 'Status', 'Saved At'];
+  const headers = [
+    'Name',
+    'Email',
+    'Phone',
+    'Deliverability Grade',
+    'Company',
+    'Headline',
+    'Profile URL',
+    'Status',
+    'Touch 1 LinkedIn Note',
+    'Touch 2 LinkedIn Followup',
+    'Touch 3 Email Subject',
+    'Touch 3 Email Body',
+    'Touch 4 Email Followup',
+    'Saved At',
+  ];
+
   const rows = leads.map((l) => [
     `"${(l.name || '').replace(/"/g, '""')}"`,
     `"${(l.email || '').replace(/"/g, '""')}"`,
     `"${(l.phone || '').replace(/"/g, '""')}"`,
-    `"${(l.emailConfidence || '').replace(/"/g, '""')}"`,
-    `"${(l.headline || '').replace(/"/g, '""')}"`,
+    `"${(l.deliverabilityGrade || l.emailConfidence || '').replace(/"/g, '""')}"`,
     `"${(l.company || '').replace(/"/g, '""')}"`,
+    `"${(l.headline || '').replace(/"/g, '""')}"`,
     `"${(l.profileUrl || '').replace(/"/g, '""')}"`,
-    `"${(l.selectedIcebreaker || '').replace(/"/g, '""')}"`,
-    `"${l.status}"`,
+    `"${l.status || 'new'}"`,
+    `"${(l.sequence?.touch1_linkedin_connect || l.selectedIcebreaker || '').replace(/"/g, '""')}"`,
+    `"${(l.sequence?.touch2_linkedin_followup || '').replace(/"/g, '""')}"`,
+    `"${(l.sequence?.touch3_email_subject || '').replace(/"/g, '""')}"`,
+    `"${(l.sequence?.touch3_email_body || '').replace(/"/g, '""')}"`,
+    `"${(l.sequence?.touch4_email_followup || '').replace(/"/g, '""')}"`,
     `"${l.savedAt}"`,
   ]);
 

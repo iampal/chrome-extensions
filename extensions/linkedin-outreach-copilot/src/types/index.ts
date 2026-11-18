@@ -1,3 +1,11 @@
+export interface OutreachSequence {
+  touch1_linkedin_connect: string;
+  touch2_linkedin_followup: string;
+  touch3_email_subject: string;
+  touch3_email_body: string;
+  touch4_email_followup: string;
+}
+
 export interface LinkedInProfile {
   name: string;
   headline: string;
@@ -6,7 +14,8 @@ export interface LinkedInProfile {
   companyDomain?: string;
   email?: string;
   phone?: string;
-  emailConfidence?: string;
+  emailConfidence?: 'verified_linkedin' | 'verified_api' | 'pattern_guess' | 'not_found';
+  deliverabilityGrade?: string;
   about?: string;
   profileUrl: string;
   avatarUrl?: string;
@@ -30,11 +39,14 @@ export interface SavedLead {
   email?: string;
   phone?: string;
   emailConfidence?: string;
+  deliverabilityGrade?: string;
   profileUrl: string;
+  sequence?: OutreachSequence;
   selectedIcebreaker?: string;
   savedAt: string;
   notes?: string;
-  status: 'saved' | 'contacted' | 'replied';
+  listTag?: string;
+  status: 'new' | 'connected' | 'emailed' | 'replied';
 }
 
 export interface UserSettings {
@@ -48,4 +60,5 @@ export interface UserSettings {
   isPro: boolean;
   hunterApiKey?: string;
   webhookUrl?: string;
+  preferredTone?: OutreachTone;
 }

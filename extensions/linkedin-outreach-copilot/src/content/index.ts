@@ -1,8 +1,8 @@
 import { parseLinkedInProfile, isLinkedInProfileUrl } from '../utils/linkedinParser';
-import { generateIcebreakers } from '../utils/aiGenerator';
-import { getSettings, saveLead, checkAndIncrementQuota } from '../utils/storage';
+import { generateIcebreakers, generateOutreachSequence } from '../utils/aiGenerator';
+import { getSettings, saveLead } from '../utils/storage';
 import { enrichContactInfo, ContactEnrichmentResult } from '../utils/emailPredictor';
-import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
+import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } from '../types';
 
 (function () {
   console.log('⚡ LinkedIn Outreach Copilot initializing...');
@@ -14,7 +14,9 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
 
   // State
   let isOpen = false;
+  let activeTab: 'sequence' | 'icebreakers' = 'sequence';
   let activeProfile: LinkedInProfile | null = null;
+  let currentSequence: OutreachSequence | null = null;
   let currentHooks: GeneratedIcebreaker[] = [];
   let currentContact: ContactEnrichmentResult | null = null;
   let settings: UserSettings | null = null;
@@ -57,7 +59,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       display: flex;
       align-items: center;
       gap: 8px;
-      background: #0a66c2;
+      background: linear-gradient(135deg, #0a66c2 0%, #004182 100%);
       color: #ffffff;
       padding: 12px 20px;
       border-radius: 9999px;
@@ -72,7 +74,6 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     }
     .copilot-launcher:hover {
       transform: scale(1.06);
-      background: #004182;
       box-shadow: 0 14px 28px -3px rgba(10, 102, 194, 0.7);
     }
     .copilot-badge-dot {
@@ -86,18 +87,18 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     /* Drawer */
     .copilot-drawer {
       position: fixed;
-      top: 68px;
+      top: 64px;
       right: 24px;
-      width: 410px;
-      max-height: calc(100vh - 90px);
+      width: 420px;
+      max-height: calc(100vh - 84px);
       background: #ffffff;
       border-radius: 16px;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0,0,0,0.08);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(0,0,0,0.08);
       display: flex;
       flex-direction: column;
       overflow: hidden;
       z-index: 2147483647;
-      animation: copilotSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      animation: copilotSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     @keyframes copilotSlideIn {
@@ -107,7 +108,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
 
     .copilot-header {
       padding: 14px 18px;
-      background: #0a66c2;
+      background: linear-gradient(135deg, #0a66c2 0%, #004182 100%);
       color: #ffffff;
       display: flex;
       align-items: center;
@@ -135,7 +136,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     }
 
     .copilot-profile-box {
-      padding: 14px 18px;
+      padding: 12px 18px;
       background: #f8fafc;
       border-bottom: 1px solid #e2e8f0;
       display: flex;
@@ -183,10 +184,10 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       margin-top: 2px;
     }
 
-    /* Contact Enrichment Section (Real Extraction) */
+    /* Contact Details Card */
     .copilot-contact-card {
-      margin: 12px 18px 0;
-      padding: 12px 14px;
+      margin: 10px 18px 0;
+      padding: 12px;
       background: #f8fafc;
       border: 1px solid #cbd5e1;
       border-radius: 10px;
@@ -195,7 +196,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .copilot-contact-title {
       font-size: 11px;
@@ -203,11 +204,8 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       color: #334155;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      display: flex;
-      align-items: center;
-      gap: 4px;
     }
-    .copilot-contact-badge-verified {
+    .copilot-badge-verified {
       font-size: 10px;
       padding: 2px 6px;
       border-radius: 4px;
@@ -215,7 +213,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       background: #dcfce7;
       color: #15803d;
     }
-    .copilot-contact-badge-pattern {
+    .copilot-badge-pattern {
       font-size: 10px;
       padding: 2px 6px;
       border-radius: 4px;
@@ -223,19 +221,11 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       background: #eff6ff;
       color: #1d4ed8;
     }
-    .copilot-contact-badge-none {
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-weight: 700;
-      background: #f1f5f9;
-      color: #64748b;
-    }
     .copilot-contact-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 6px 0;
+      padding: 5px 0;
       border-bottom: 1px dashed #e2e8f0;
       font-size: 12px;
     }
@@ -251,7 +241,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       gap: 6px;
       word-break: break-all;
     }
-    .copilot-contact-val-empty {
+    .copilot-contact-empty {
       font-weight: 500;
       color: #94a3b8;
       font-style: italic;
@@ -275,7 +265,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     .copilot-extract-btn {
       width: 100%;
       margin-top: 8px;
-      padding: 7px;
+      padding: 6px;
       background: #ffffff;
       border: 1px solid #0a66c2;
       color: #0a66c2;
@@ -293,15 +283,35 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       background: #eff6ff;
     }
 
-    .copilot-source-note {
-      font-size: 10px;
+    /* Tabs */
+    .copilot-tabs {
+      display: flex;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      margin-top: 10px;
+    }
+    .copilot-tab {
+      flex: 1;
+      padding: 9px 12px;
+      background: none;
+      border: none;
+      font-size: 12px;
+      font-weight: 600;
       color: #64748b;
-      margin-top: 6px;
-      display: block;
+      cursor: pointer;
+      text-align: center;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .copilot-tab.active {
+      color: #0a66c2;
+      border-bottom: 2px solid #0a66c2;
+      background: #ffffff;
     }
 
+    /* Actions Bar */
     .copilot-actions {
-      padding: 12px 18px;
+      padding: 10px 18px;
       display: flex;
       gap: 8px;
       border-bottom: 1px solid #f1f5f9;
@@ -311,7 +321,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       background: #0a66c2;
       color: #ffffff;
       border: none;
-      padding: 10px 14px;
+      padding: 9px 14px;
       border-radius: 8px;
       font-weight: 600;
       font-size: 13px;
@@ -329,7 +339,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       background: #f1f5f9;
       color: #334155;
       border: 1px solid #e2e8f0;
-      padding: 10px 14px;
+      padding: 9px 14px;
       border-radius: 8px;
       font-weight: 600;
       font-size: 13px;
@@ -348,62 +358,68 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       border-color: #16a34a !important;
     }
 
+    /* Content Area */
     .copilot-body {
       padding: 14px 18px;
       flex: 1;
       overflow-y: auto;
-      max-height: 320px;
+      max-height: 310px;
     }
-    .copilot-hook-card {
+
+    .copilot-sequence-step {
       border: 1px solid #e2e8f0;
-      border-radius: 10px;
-      padding: 12px;
-      margin-bottom: 12px;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
       background: #ffffff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
     }
-    .copilot-hook-header {
+    .copilot-step-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
-    .copilot-hook-label {
-      font-size: 11px;
-      font-weight: 700;
-      color: #0a66c2;
+    .copilot-step-tag {
+      font-size: 10px;
+      font-weight: 800;
       text-transform: uppercase;
+      color: #0a66c2;
+      background: #eff6ff;
+      padding: 2px 6px;
+      border-radius: 4px;
     }
-    .copilot-hook-copy-btn {
+    .copilot-step-btns {
+      display: flex;
+      gap: 6px;
+    }
+    .copilot-step-btn {
       background: #f8fafc;
-      color: #475569;
-      border: 1px solid #e2e8f0;
-      padding: 4px 8px;
-      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      padding: 3px 6px;
+      border-radius: 4px;
       font-size: 11px;
       font-weight: 600;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 4px;
     }
-    .copilot-hook-copy-btn:hover {
+    .copilot-step-btn:hover {
       background: #e2e8f0;
     }
-    .copilot-hook-copied {
-      background: #dcfce7 !important;
-      color: #15803d !important;
-      border-color: #86efac !important;
+    .copilot-gmail-btn {
+      background: #ea4335 !important;
+      color: #ffffff !important;
+      border-color: #ea4335 !important;
     }
-    .copilot-hook-text {
+    .copilot-step-text {
       margin: 0;
-      font-size: 13px;
+      font-size: 12px;
       color: #334155;
       line-height: 1.45;
+      white-space: pre-wrap;
     }
 
     .copilot-footer {
-      padding: 10px 18px;
+      padding: 8px 18px;
       border-top: 1px solid #f1f3f5;
       background: #f8fafc;
       display: flex;
@@ -415,12 +431,10 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
   `;
   shadow.appendChild(style);
 
-  // Root wrapper inside shadow
   const wrapper = document.createElement('div');
   wrapper.id = 'copilot-shadow-wrapper';
   shadow.appendChild(wrapper);
 
-  // Render Launcher Button
   function renderLauncher() {
     wrapper.innerHTML = `
       <div class="copilot-launcher" id="copilot-launch-btn">
@@ -437,7 +451,6 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     });
   }
 
-  // Render Slide-out Drawer
   function renderDrawer() {
     if (!activeProfile) {
       detectProfile();
@@ -445,7 +458,6 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
 
     const p = activeProfile;
 
-    // If not viewing any profile page
     if (!p) {
       wrapper.innerHTML = `
         <div class="copilot-drawer">
@@ -459,13 +471,13 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
           <div style="padding: 24px; text-align: center; color: #475569;">
             <div style="font-size: 32px; margin-bottom: 8px;">👤</div>
             <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px; color: #0f172a;">No LinkedIn Profile Detected</div>
-            <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 16px;">
-              Please open any LinkedIn profile page (e.g. <code>https://www.linkedin.com/in/...</code>) to extract real contact info and generate personalized outreach hooks.
+            <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0;">
+              Please open any LinkedIn profile page (e.g. <code>https://www.linkedin.com/in/...</code>) to extract real contact info and generate your outreach sequence.
             </p>
           </div>
           <div class="copilot-footer">
             <span>Ready for LinkedIn profiles</span>
-            <span style="font-weight: 600; color: #0a66c2;">Copilot v1.0</span>
+            <span style="font-weight: 600; color: #0a66c2;">Copilot v2.0</span>
           </div>
         </div>
       `;
@@ -477,17 +489,20 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     }
 
     const contact = currentContact;
+    const seq = currentSequence;
 
     wrapper.innerHTML = `
       <div class="copilot-drawer">
+        <!-- Header -->
         <div class="copilot-header">
           <div class="copilot-title">
             <span>⚡</span>
-            <span>Outreach Copilot</span>
+            <span>Outreach Copilot (RocketReach+)</span>
           </div>
           <button class="copilot-close-btn" id="copilot-close-btn">✕</button>
         </div>
 
+        <!-- Profile Top Card -->
         <div class="copilot-profile-box">
           ${
             p.avatarUrl
@@ -501,119 +516,181 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
           </div>
         </div>
 
-        <!-- Contact Intelligence Box (Real Extraction + Clean Fallbacks) -->
+        <!-- Contact Intelligence (Real Verified vs Pattern) -->
         <div class="copilot-contact-card">
           <div class="copilot-contact-header">
-            <div class="copilot-contact-title">
-              <span>🎯</span> Contact Details
-            </div>
+            <div class="copilot-contact-title">🎯 Contact Intelligence</div>
             ${
               contact?.confidence === 'verified_linkedin'
-                ? '<span class="copilot-contact-badge-verified">✓ LINKEDIN VERIFIED</span>'
+                ? '<span class="copilot-badge-verified">✓ LINKEDIN VERIFIED</span>'
                 : contact?.confidence === 'verified_api'
-                ? '<span class="copilot-contact-badge-verified">✓ API VERIFIED</span>'
+                ? '<span class="copilot-badge-verified">✓ API VERIFIED</span>'
                 : contact?.confidence === 'pattern_guess'
-                ? '<span class="copilot-contact-badge-pattern">⚡ CORPORATE PATTERN</span>'
-                : '<span class="copilot-contact-badge-none">UNVERIFIED</span>'
+                ? '<span class="copilot-badge-pattern">⚡ CORPORATE PATTERN</span>'
+                : '<span class="copilot-badge-pattern">ANALYZED</span>'
             }
           </div>
 
-          <!-- Email Row -->
           <div class="copilot-contact-row">
             <div class="copilot-contact-val">
               <span>📧</span>
               ${
                 contact?.email
                   ? `<span id="contact-email-val">${contact.email}</span>`
-                  : `<span class="copilot-contact-val-empty">Not publicly displayed</span>`
+                  : `<span class="copilot-contact-empty">Not publicly displayed</span>`
               }
             </div>
-            ${
-              contact?.email
-                ? '<button class="copilot-contact-copy-btn" id="copy-email-btn">Copy</button>'
-                : ''
-            }
+            ${contact?.email ? '<button class="copilot-contact-copy-btn" id="copy-email-btn">Copy</button>' : ''}
           </div>
 
-          <!-- Phone Row -->
           <div class="copilot-contact-row">
             <div class="copilot-contact-val">
               <span>📞</span>
               ${
                 contact?.phone
                   ? `<span id="contact-phone-val">${contact.phone}</span>`
-                  : `<span class="copilot-contact-val-empty">Not publicly listed</span>`
+                  : `<span class="copilot-contact-empty">Not publicly listed</span>`
               }
             </div>
-            ${
-              contact?.phone
-                ? '<button class="copilot-contact-copy-btn" id="copy-phone-btn">Copy</button>'
-                : ''
-            }
+            ${contact?.phone ? '<button class="copilot-contact-copy-btn" id="copy-phone-btn">Copy</button>' : ''}
           </div>
 
-          <!-- Button to trigger deep modal extraction -->
           <button class="copilot-extract-btn" id="extract-modal-btn">
-            ${isExtractingContact ? '⏳ Extracting LinkedIn Contact Info...' : '⚡ Extract Direct from LinkedIn Contact Info'}
+            ${isExtractingContact ? '⏳ Scanning Contact Info...' : '⚡ Scan LinkedIn Contact Info Modal'}
           </button>
-
-          <span class="copilot-source-note">
-            ${contact?.sourceNote || 'Click above to scan the native LinkedIn Contact Info modal'}
-          </span>
         </div>
 
+        <!-- Navigation Tabs -->
+        <div class="copilot-tabs">
+          <button class="copilot-tab ${activeTab === 'sequence' ? 'active' : ''}" id="tab-sequence">
+            🚀 4-Step Sequence
+          </button>
+          <button class="copilot-tab ${activeTab === 'icebreakers' ? 'active' : ''}" id="tab-icebreakers">
+            ✨ Quick Hooks (${currentHooks.length})
+          </button>
+        </div>
+
+        <!-- Action Bar -->
         <div class="copilot-actions">
           <button class="copilot-btn-primary" id="copilot-generate-btn">
-            ${isGenerating ? '<span>⏳</span> Crafting Hooks...' : '<span>⚡</span> Generate Hooks'}
+            ${isGenerating ? '<span>⏳</span> Crafting Campaign...' : '<span>⚡</span> Generate Sequence'}
           </button>
           <button class="copilot-btn-secondary" id="copilot-save-btn">
             <span>💾</span> Save Lead
           </button>
         </div>
 
-        <div class="copilot-body" id="copilot-hooks-body">
+        <!-- Body Content -->
+        <div class="copilot-body">
           ${
-            currentHooks.length > 0
+            activeTab === 'sequence'
+              ? seq
+                ? `
+                <!-- Touch 1: LinkedIn Connect -->
+                <div class="copilot-sequence-step">
+                  <div class="copilot-step-header">
+                    <span class="copilot-step-tag">Step 1: LinkedIn Connect Note</span>
+                    <div class="copilot-step-btns">
+                      <button class="copilot-step-btn" id="copy-touch1">Copy & Insert</button>
+                    </div>
+                  </div>
+                  <p class="copilot-step-text">${seq.touch1_linkedin_connect}</p>
+                </div>
+
+                <!-- Touch 2: LinkedIn Followup -->
+                <div class="copilot-sequence-step">
+                  <div class="copilot-step-header">
+                    <span class="copilot-step-tag">Step 2: LinkedIn Follow-Up (+2 Days)</span>
+                    <div class="copilot-step-btns">
+                      <button class="copilot-step-btn" id="copy-touch2">Copy</button>
+                    </div>
+                  </div>
+                  <p class="copilot-step-text">${seq.touch2_linkedin_followup}</p>
+                </div>
+
+                <!-- Touch 3: Cold Email Pitch -->
+                <div class="copilot-sequence-step">
+                  <div class="copilot-step-header">
+                    <span class="copilot-step-tag">Step 3: Direct Email (+4 Days)</span>
+                    <div class="copilot-step-btns">
+                      <button class="copilot-step-btn copilot-gmail-btn" id="gmail-touch3">✉️ Open in Gmail</button>
+                      <button class="copilot-step-btn" id="copy-touch3">Copy</button>
+                    </div>
+                  </div>
+                  <div style="font-weight: 700; font-size: 11px; color: #1e293b; margin-bottom: 4px;">Subject: ${seq.touch3_email_subject}</div>
+                  <p class="copilot-step-text">${seq.touch3_email_body}</p>
+                </div>
+
+                <!-- Touch 4: Final Bump -->
+                <div class="copilot-sequence-step">
+                  <div class="copilot-step-header">
+                    <span class="copilot-step-tag">Step 4: Final Follow-Up Bump</span>
+                    <div class="copilot-step-btns">
+                      <button class="copilot-step-btn" id="copy-touch4">Copy</button>
+                    </div>
+                  </div>
+                  <p class="copilot-step-text">${seq.touch4_email_followup}</p>
+                </div>
+              `
+                : `
+                <div style="text-align: center; padding: 24px 12px; color: #94a3b8;">
+                  <div style="font-size: 30px; margin-bottom: 6px;">🚀</div>
+                  <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">Full Multi-Channel Sequence</div>
+                  <p style="margin: 0; font-size: 12px; color: #64748b;">
+                    Click <b>"Generate Sequence"</b> to create an automated 4-step LinkedIn & Cold Email sequence tailored to <b>${p.name}</b>.
+                  </p>
+                </div>
+              `
+              : currentHooks.length > 0
               ? currentHooks
                   .map(
-                    (hook) => `
-                <div class="copilot-hook-card">
-                  <div class="copilot-hook-header">
-                    <span class="copilot-hook-label">${hook.label}</span>
-                    <button class="copilot-hook-copy-btn" data-hook-id="${hook.id}">
-                      📋 Copy & Insert
-                    </button>
+                    (h) => `
+                <div class="copilot-sequence-step">
+                  <div class="copilot-step-header">
+                    <span class="copilot-step-tag">${h.label}</span>
+                    <button class="copilot-step-btn copy-hook-btn" data-hook="${encodeURIComponent(h.message)}">Copy & Insert</button>
                   </div>
-                  <p class="copilot-hook-text">${hook.message}</p>
+                  <p class="copilot-step-text">${h.message}</p>
                 </div>
               `
                   )
                   .join('')
               : `
-                <div style="text-align: center; padding: 20px 12px; color: #94a3b8;">
-                  <div style="font-size: 28px; margin-bottom: 6px;">✨</div>
-                  <p style="margin: 0; font-size: 13px; color: #475569;">
-                    Click <b>"Generate Hooks"</b> to create 3 hyper-personalized messages tailored to <b>${p.name}</b>.
+                <div style="text-align: center; padding: 24px 12px; color: #94a3b8;">
+                  <div style="font-size: 30px; margin-bottom: 6px;">✨</div>
+                  <p style="margin: 0; font-size: 12px; color: #64748b;">
+                    Click <b>"Generate Sequence"</b> to populate icebreakers and multi-touch angles.
                   </p>
                 </div>
               `
           }
         </div>
 
+        <!-- Footer -->
         <div class="copilot-footer">
-          <span>Auto-injects into connection note</span>
-          <span style="font-weight: 600; color: #0a66c2;">Copilot v1.0</span>
+          <span>Auto-injects to message box & Gmail</span>
+          <span style="font-weight: 600; color: #0a66c2;">Outreach Copilot v2.0</span>
         </div>
       </div>
     `;
 
-    // Event listeners inside drawer
+    // Event Listeners inside drawer
     wrapper.querySelector('#copilot-close-btn')?.addEventListener('click', () => {
       isOpen = false;
       renderLauncher();
     });
 
-    // Deep LinkedIn Modal Extraction
+    wrapper.querySelector('#tab-sequence')?.addEventListener('click', () => {
+      activeTab = 'sequence';
+      renderDrawer();
+    });
+
+    wrapper.querySelector('#tab-icebreakers')?.addEventListener('click', () => {
+      activeTab = 'icebreakers';
+      renderDrawer();
+    });
+
+    // Native modal scan
     wrapper.querySelector('#extract-modal-btn')?.addEventListener('click', async () => {
       if (isExtractingContact) return;
       isExtractingContact = true;
@@ -657,6 +734,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       }
     });
 
+    // Generate Sequence + Hooks
     wrapper.querySelector('#copilot-generate-btn')?.addEventListener('click', async () => {
       if (isGenerating) return;
       isGenerating = true;
@@ -665,8 +743,12 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       try {
         const s = await getSettings();
         settings = s;
-        const hooks = await generateIcebreakers(p, s);
-        currentHooks = hooks;
+        const [seqRes, hooksRes] = await Promise.all([
+          generateOutreachSequence(p, s),
+          generateIcebreakers(p, s),
+        ]);
+        currentSequence = seqRes;
+        currentHooks = hooksRes;
       } catch (err) {
         console.error('Error generating:', err);
       } finally {
@@ -675,6 +757,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       }
     });
 
+    // Save Lead to Pipeline
     wrapper.querySelector('#copilot-save-btn')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget as HTMLButtonElement;
       await saveLead({
@@ -685,8 +768,10 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
         email: contact?.email,
         phone: contact?.phone,
         emailConfidence: contact?.confidence,
+        deliverabilityGrade: contact?.confidence === 'verified_linkedin' ? 'A+ (LinkedIn Verified)' : 'A (Corporate Pattern)',
+        sequence: currentSequence || undefined,
         profileUrl: p.profileUrl,
-        selectedIcebreaker: currentHooks[0]?.message,
+        selectedIcebreaker: currentSequence?.touch1_linkedin_connect || currentHooks[0]?.message,
       });
       btn.classList.add('copilot-btn-saved');
       btn.innerHTML = '<span>✓</span> Saved!';
@@ -696,22 +781,68 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       }, 2500);
     });
 
-    // Copy & Insert buttons
-    wrapper.querySelectorAll('.copilot-hook-copy-btn').forEach((btn) => {
+    // Touch 1 Copy & Insert
+    wrapper.querySelector('#copy-touch1')?.addEventListener('click', (e) => {
+      if (seq) {
+        navigator.clipboard.writeText(seq.touch1_linkedin_connect);
+        insertIntoLinkedInInput(seq.touch1_linkedin_connect);
+        const btn = e.currentTarget as HTMLButtonElement;
+        btn.innerText = '✓ Inserted!';
+        setTimeout(() => (btn.innerText = 'Copy & Insert'), 2000);
+      }
+    });
+
+    // Touch 2 Copy
+    wrapper.querySelector('#copy-touch2')?.addEventListener('click', (e) => {
+      if (seq) {
+        navigator.clipboard.writeText(seq.touch2_linkedin_followup);
+        const btn = e.currentTarget as HTMLButtonElement;
+        btn.innerText = '✓ Copied!';
+        setTimeout(() => (btn.innerText = 'Copy'), 2000);
+      }
+    });
+
+    // Touch 3 Gmail Launcher (1-Click email draft)
+    wrapper.querySelector('#gmail-touch3')?.addEventListener('click', () => {
+      if (seq) {
+        const to = contact?.email || '';
+        const su = encodeURIComponent(seq.touch3_email_subject);
+        const body = encodeURIComponent(seq.touch3_email_body);
+        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${su}&body=${body}`;
+        window.open(gmailUrl, '_blank');
+      }
+    });
+
+    // Touch 3 Copy
+    wrapper.querySelector('#copy-touch3')?.addEventListener('click', (e) => {
+      if (seq) {
+        navigator.clipboard.writeText(`Subject: ${seq.touch3_email_subject}\n\n${seq.touch3_email_body}`);
+        const btn = e.currentTarget as HTMLButtonElement;
+        btn.innerText = '✓ Copied!';
+        setTimeout(() => (btn.innerText = 'Copy'), 2000);
+      }
+    });
+
+    // Touch 4 Copy
+    wrapper.querySelector('#copy-touch4')?.addEventListener('click', (e) => {
+      if (seq) {
+        navigator.clipboard.writeText(seq.touch4_email_followup);
+        const btn = e.currentTarget as HTMLButtonElement;
+        btn.innerText = '✓ Copied!';
+        setTimeout(() => (btn.innerText = 'Copy'), 2000);
+      }
+    });
+
+    // Copy hook buttons
+    wrapper.querySelectorAll('.copy-hook-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const target = e.currentTarget as HTMLButtonElement;
-        const hookId = target.getAttribute('data-hook-id');
-        const hook = currentHooks.find((h) => h.id === hookId);
-        if (hook) {
-          navigator.clipboard.writeText(hook.message);
-          target.classList.add('copilot-hook-copied');
-          target.innerHTML = '<span>✓</span> Copied!';
-          setTimeout(() => {
-            target.classList.remove('copilot-hook-copied');
-            target.innerHTML = '📋 Copy & Insert';
-          }, 2000);
-
-          insertIntoLinkedInInput(hook.message);
+        const text = decodeURIComponent(target.getAttribute('data-hook') || '');
+        if (text) {
+          navigator.clipboard.writeText(text);
+          insertIntoLinkedInInput(text);
+          target.innerText = '✓ Inserted!';
+          setTimeout(() => (target.innerText = 'Copy & Insert'), 2000);
         }
       });
     });
@@ -737,6 +868,7 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     if (parsed) {
       if (parsed.profileUrl !== activeProfile?.profileUrl) {
         activeProfile = parsed;
+        currentSequence = null;
         currentHooks = [];
         currentContact = await enrichContactInfo(parsed, settings, false);
       }
@@ -753,7 +885,6 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     const BUTTON_ID = 'linkedin-copilot-injected-save-btn';
     if (document.getElementById(BUTTON_ID)) return;
 
-    // Look for LinkedIn's action button row
     const targetRow = document.querySelector(
       '.pvs-profile-actions, .pv-top-card-v2-ctas, div.ph5 .display-flex.align-items-center.mt2, main section .display-flex:has(button.artdeco-button)'
     );
@@ -762,9 +893,9 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
       const btn = document.createElement('button');
       btn.id = BUTTON_ID;
       btn.type = 'button';
-      btn.innerHTML = '⚡ <b>Save Lead & Copilot</b>';
+      btn.innerHTML = '⚡ <b>Save Lead & Sequence</b>';
       btn.style.cssText = `
-        background-color: #0a66c2;
+        background: linear-gradient(135deg, #0a66c2 0%, #004182 100%);
         color: #ffffff;
         border: none;
         border-radius: 16px;
@@ -776,12 +907,13 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
         align-items: center;
         gap: 6px;
         margin-left: 8px;
-        box-shadow: 0 2px 4px rgba(10, 102, 194, 0.2);
+        box-shadow: 0 2px 4px rgba(10, 102, 194, 0.25);
         z-index: 100;
+        transition: transform 0.15s;
       `;
 
-      btn.addEventListener('mouseenter', () => (btn.style.backgroundColor = '#004182'));
-      btn.addEventListener('mouseleave', () => (btn.style.backgroundColor = '#0a66c2'));
+      btn.addEventListener('mouseenter', () => (btn.style.transform = 'scale(1.03)'));
+      btn.addEventListener('mouseleave', () => (btn.style.transform = 'scale(1)'));
       btn.addEventListener('click', async () => {
         isOpen = true;
         await detectProfile();
@@ -801,7 +933,6 @@ import { GeneratedIcebreaker, LinkedInProfile, UserSettings } from '../types';
     document.body.appendChild(host);
     renderLauncher();
 
-    // Check periodically & on mutations
     setInterval(() => {
       detectProfile();
       injectNativeProfileButton();
