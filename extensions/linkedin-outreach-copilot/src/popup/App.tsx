@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { SavedLead, UserSettings } from '../types';
 import { getSettings, saveSettings, getSavedLeads, deleteLead, exportLeadsToCSV } from '../utils/storage';
 import { generateOSINTDorks, OSINTDork, openDorkSearch } from '../utils/osintSearch';
-import { Sparkles, Users, Settings as SettingsIcon, Download, Trash2, ExternalLink, Search, Copy, Check } from 'lucide-react';
+import { generateLinkedInPosts, generateLinkedInComments, LinkedInPostDraft, LinkedInCommentDraft } from '../utils/postCommentGenerator';
+import { Sparkles, Users, Settings as SettingsIcon, Download, Trash2, ExternalLink, Search, Copy, Check, PenTool, MessageSquare } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'leads' | 'osint' | 'settings'>('leads');
+  const [activeTab, setActiveTab] = useState<'leads' | 'posts' | 'osint' | 'settings'>('leads');
   const [leads, setLeads] = useState<SavedLead[]>([]);
   const [settings, setSettings] = useState<UserSettings>({
     aiProvider: 'gemini',
@@ -22,6 +23,15 @@ export const App: React.FC = () => {
   const [osintDomain, setOsintDomain] = useState('');
   const [generatedDorks, setGeneratedDorks] = useState<OSINTDork[]>([]);
   const [copiedDorkId, setCopiedDorkId] = useState<string | null>(null);
+
+  // Not-Ai Posts & Comments in popup
+  const [postTopic, setPostTopic] = useState('');
+  const [posts, setPosts] = useState<LinkedInPostDraft[]>([]);
+  const [isGeneratingPosts, setIsGeneratingPosts] = useState(false);
+  const [commentSnippet, setCommentSnippet] = useState('');
+  const [comments, setComments] = useState<LinkedInCommentDraft[]>([]);
+  const [isGeneratingComments, setIsGeneratingComments] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -73,21 +83,47 @@ export const App: React.FC = () => {
     setGeneratedDorks(dorks);
   };
 
-  const copyQuery = (id: string, query: string) => {
-    navigator.clipboard.writeText(query);
-    setCopiedDorkId(id);
-    setTimeout(() => setCopiedDorkId(null), 2000);
+  const handleGeneratePosts = async () => {
+    if (isGeneratingPosts) return;
+    setIsGeneratingPosts(true);
+    try {
+      const res = await generateLinkedInPosts(postTopic, settings);
+      setPosts(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGeneratingPosts(false);
+    }
+  };
+
+  const handleGenerateComments = async () => {
+    if (isGeneratingComments) return;
+    setIsGeneratingComments(true);
+    try {
+      const res = await generateLinkedInComments(commentSnippet, settings);
+      setComments(res);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGeneratingComments(false);
+    }
+  };
+
+  const copyText = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   return (
-    <div style={{ width: '400px', minHeight: '540px', backgroundColor: '#ffffff', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ width: '420px', minHeight: '560px', backgroundColor: '#ffffff', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column' }}>
       {/* Header - Royal Navy */}
       <div style={{ background: 'linear-gradient(135deg, #0b192c 0%, #1e3e62 100%)', color: '#ffffff', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(56, 189, 248, 0.3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Sparkles size={18} color="#fbbf24" />
           <span style={{ fontWeight: 800, fontSize: '15px', letterSpacing: '-0.01em' }}>Outreach Copilot</span>
           <span style={{ background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.4)', fontSize: '10px', fontWeight: 700, padding: '2px 5px', borderRadius: '4px' }}>
-            PRO
+            Not-Ai
           </span>
         </div>
         {settings.isPro ? (
@@ -113,15 +149,35 @@ export const App: React.FC = () => {
             borderBottom: activeTab === 'leads' ? '3px solid #1e3e62' : 'none',
             color: activeTab === 'leads' ? '#0b192c' : '#64748b',
             fontWeight: activeTab === 'leads' ? 700 : 600,
-            fontSize: '12px',
+            fontSize: '11px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '5px',
+            gap: '4px',
           }}
         >
-          <Users size={14} /> Leads ({leads.length})
+          <Users size={13} /> Leads ({leads.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('posts')}
+          style={{
+            flex: 1,
+            padding: '10px 4px',
+            border: 'none',
+            background: 'none',
+            borderBottom: activeTab === 'posts' ? '3px solid #1e3e62' : 'none',
+            color: activeTab === 'posts' ? '#0b192c' : '#64748b',
+            fontWeight: activeTab === 'posts' ? 700 : 600,
+            fontSize: '11px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px',
+          }}
+        >
+          <PenTool size={13} /> Not-Ai Content
         </button>
         <button
           onClick={() => setActiveTab('osint')}
@@ -133,15 +189,15 @@ export const App: React.FC = () => {
             borderBottom: activeTab === 'osint' ? '3px solid #1e3e62' : 'none',
             color: activeTab === 'osint' ? '#0b192c' : '#64748b',
             fontWeight: activeTab === 'osint' ? 700 : 600,
-            fontSize: '12px',
+            fontSize: '11px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '5px',
+            gap: '4px',
           }}
         >
-          <Search size={14} /> OSINT Dorks
+          <Search size={13} /> OSINT
         </button>
         <button
           onClick={() => setActiveTab('settings')}
@@ -153,15 +209,15 @@ export const App: React.FC = () => {
             borderBottom: activeTab === 'settings' ? '3px solid #1e3e62' : 'none',
             color: activeTab === 'settings' ? '#0b192c' : '#64748b',
             fontWeight: activeTab === 'settings' ? 700 : 600,
-            fontSize: '12px',
+            fontSize: '11px',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '5px',
+            gap: '4px',
           }}
         >
-          <SettingsIcon size={14} /> Settings
+          <SettingsIcon size={13} /> Settings
         </button>
       </div>
 
@@ -251,12 +307,117 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 2: Standalone Free OSINT Dork Tool */}
+      {/* Tab 2: Not-Ai Posts & Comments */}
+      {activeTab === 'posts' && (
+        <div style={{ flex: 1, padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', maxHeight: '420px' }}>
+          {/* Post Drafter */}
+          <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', backgroundColor: '#f8fafc' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '12px', color: '#0b192c', marginBottom: '6px' }}>
+              <PenTool size={14} color="#1e3e62" /> Not-Ai LinkedIn Post Drafter
+            </div>
+            <textarea
+              placeholder="Enter notes, lessons, or topic (e.g. testing cold outreach vs referrals)..."
+              value={postTopic}
+              onChange={(e) => setPostTopic(e.target.value)}
+              rows={2}
+              style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', marginBottom: '6px' }}
+            />
+            <button
+              onClick={handleGeneratePosts}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, #0b192c 0%, #1e3e62 100%)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '6px',
+                borderRadius: '6px',
+                fontWeight: 700,
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              {isGeneratingPosts ? '⏳ Humanizing...' : '✍️ Generate 3 Human Posts'}
+            </button>
+
+            {posts.length > 0 && (
+              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {posts.map((p) => (
+                  <div key={p.id} style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', backgroundColor: '#ffffff' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '11px', color: '#1e3e62' }}>{p.title}</span>
+                      <button
+                        onClick={() => copyText(p.id, p.content)}
+                        style={{ background: 'none', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+                      >
+                        {copiedId === p.id ? <Check size={11} color="#16a34a" /> : <Copy size={11} />}
+                        {copiedId === p.id ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>{p.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Comment Drafter */}
+          <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '12px', backgroundColor: '#f8fafc' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '12px', color: '#0b192c', marginBottom: '6px' }}>
+              <MessageSquare size={14} color="#1e3e62" /> Not-Ai Smart Comment Drafter
+            </div>
+            <textarea
+              placeholder="Paste post snippet to draft a high-value response..."
+              value={commentSnippet}
+              onChange={(e) => setCommentSnippet(e.target.value)}
+              rows={2}
+              style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', boxSizing: 'border-box', marginBottom: '6px' }}
+            />
+            <button
+              onClick={handleGenerateComments}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, #0b192c 0%, #1e3e62 100%)',
+                color: '#ffffff',
+                border: 'none',
+                padding: '6px',
+                borderRadius: '6px',
+                fontWeight: 700,
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              {isGeneratingComments ? '⏳ Crafting...' : '💬 Generate 3 Value-Add Comments'}
+            </button>
+
+            {comments.length > 0 && (
+              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {comments.map((c) => (
+                  <div key={c.id} style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '8px', backgroundColor: '#ffffff' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <span style={{ fontWeight: 700, fontSize: '11px', color: '#1e3e62' }}>{c.label}</span>
+                      <button
+                        onClick={() => copyText(c.id, c.content)}
+                        style={{ background: 'none', border: '1px solid #cbd5e1', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+                      >
+                        {copiedId === c.id ? <Check size={11} color="#16a34a" /> : <Copy size={11} />}
+                        {copiedId === c.id ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#334155', lineHeight: 1.4 }}>{c.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tab 3: Standalone Free OSINT Dork Tool */}
       {activeTab === 'osint' && (
         <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <form onSubmit={handleGenerateDorks} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
-              Enter any prospect or company to generate 1-click Google OSINT queries for verified emails and files:
+              Enter any prospect or company to generate 1-click Google OSINT queries:
             </div>
             <input
               type="text"
@@ -335,7 +496,11 @@ export const App: React.FC = () => {
                       🚀 Search Google
                     </button>
                     <button
-                      onClick={() => copyQuery(dork.id, dork.query)}
+                      onClick={() => {
+                        navigator.clipboard.writeText(dork.query);
+                        setCopiedDorkId(dork.id);
+                        setTimeout(() => setCopiedDorkId(null), 2000);
+                      }}
                       style={{
                         background: '#ffffff',
                         border: '1px solid #cbd5e1',
@@ -365,7 +530,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 3: Settings */}
+      {/* Tab 4: Settings */}
       {activeTab === 'settings' && (
         <form onSubmit={handleSaveSettings} style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
@@ -395,7 +560,7 @@ export const App: React.FC = () => {
               style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', boxSizing: 'border-box' }}
             />
             <span style={{ fontSize: '10px', color: '#64748b' }}>
-              Stored securely in local Chrome storage. Leave empty to use free built-in templates.
+              Stored securely in local Chrome storage. All outputs run through Not-Ai humanizer.
             </span>
           </div>
 
@@ -439,10 +604,10 @@ export const App: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: '12px', color: settings.isPro ? '#166534' : '#0b192c' }}>
-              {settings.isPro ? 'Pro Subscription Active' : 'Outreach Copilot Pro'}
+              {settings.isPro ? 'Pro Subscription Active' : 'Not-Ai Outreach Copilot Pro'}
             </div>
             <div style={{ fontSize: '10px', color: settings.isPro ? '#15803d' : '#64748b' }}>
-              100% Free DNS DoH & Google OSINT Verification Engine
+              100% Free DNS DoH, Google OSINT & Not-Ai Skills
             </div>
           </div>
           <button

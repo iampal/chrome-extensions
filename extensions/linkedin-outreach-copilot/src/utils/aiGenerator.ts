@@ -1,4 +1,5 @@
 import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } from '../types';
+import { humanizeWithNotAi } from './notAiFilter';
 
 export function extractRoleFocus(headline: string): string {
   const h = (headline || '').toLowerCase();
@@ -54,23 +55,31 @@ export async function generateIcebreakers(
   const company = profile.company || 'your team';
   const role = profile.headline.split(' at ')[0] || profile.headline;
 
+  let rawHooks: GeneratedIcebreaker[] = [];
+
   if (settings.aiProvider === 'gemini' && settings.apiKey) {
     try {
-      return await callGeminiAPI(profile, settings, firstName, company, role);
+      rawHooks = await callGeminiAPI(profile, settings, firstName, company, role);
     } catch (err) {
       console.warn('Gemini API call failed, falling back to smart heuristic generator:', err);
     }
-  }
-
-  if (settings.aiProvider === 'openai' && settings.apiKey) {
+  } else if (settings.aiProvider === 'openai' && settings.apiKey) {
     try {
-      return await callOpenAIAPI(profile, settings, firstName, company, role);
+      rawHooks = await callOpenAIAPI(profile, settings, firstName, company, role);
     } catch (err) {
       console.warn('OpenAI API call failed, falling back to smart heuristic generator:', err);
     }
   }
 
-  return generateSmartHeuristicHooks(firstName, company, role, profile, settings);
+  if (rawHooks.length === 0) {
+    rawHooks = generateSmartHeuristicHooks(firstName, company, role, profile, settings);
+  }
+
+  // Filter all hooks through Not-Ai humanizer
+  return rawHooks.map((h) => ({
+    ...h,
+    message: humanizeWithNotAi(h.message).cleanText,
+  }));
 }
 
 export async function generateOutreachSequence(
@@ -83,10 +92,13 @@ export async function generateOutreachSequence(
   const roleFocus = extractRoleFocus(profile.headline);
   const pitch = settings.customPitch || 'automating high-touch outbound workflows and increasing reply rates';
 
+  let rawSeq: OutreachSequence | null = null;
+
   // If Gemini API is available
   if (settings.aiProvider === 'gemini' && settings.apiKey) {
     try {
-      const prompt = `You are an elite B2B outbound sales director. Create an ultra-relevant 4-step multi-channel outreach sequence for:
+      const prompt = `You are an elite B2B outbound sales director who follows the "Not-Ai" editorial rules.
+Not-Ai Rules: NO em dashes (—), NO buzzwords (delve, leverage, seamless, transformative, pivotal, "in today's world"). Use natural contractions.
 Prospect: ${profile.name} (First name: ${firstName})
 Role: ${role} (Focus area: ${roleFocus})
 Company: ${company}
@@ -116,7 +128,9 @@ Return JSON strictly with format:
       if (res.ok) {
         const data = await res.json();
         const parsed = JSON.parse(data?.candidates?.[0]?.content?.parts?.[0]?.text);
-        if (parsed.touch3_email_subject) return parsed;
+        if (parsed.touch3_email_subject) {
+          rawSeq = parsed;
+        }
       }
     } catch (e) {
       console.warn('Sequence generation via Gemini failed, falling back to contextual generator:', e);
@@ -124,14 +138,24 @@ Return JSON strictly with format:
   }
 
   // Built-in Highly Relevant Contextual Sequence
-  const relevantSubject = generateContextualSubjectLine(firstName, company, roleFocus, role);
+  if (!rawSeq) {
+    const relevantSubject = generateContextualSubjectLine(firstName, company, roleFocus, role);
+    rawSeq = {
+      touch1_linkedin_connect: `Hi ${firstName}, came across your work leading ${role.slice(0, 32)} at ${company}. Really impressed by the team's trajectory! Would love to connect and follow your journey.`,
+      touch2_linkedin_followup: `Hey ${firstName}, thanks for connecting! Quick question: how are you and the team at ${company} currently optimizing your ${roleFocus} workflows this quarter? Always love exchanging notes with peers in your space.`,
+      touch3_email_subject: relevantSubject,
+      touch3_email_body: `Hi ${firstName},\n\nSaw you're steering ${role} at ${company}. When speaking with other leaders in ${roleFocus}, the biggest bottleneck right now is ${pitch}.\n\nWe helped similar teams eliminate 8+ hours of manual overhead per rep while increasing pipeline response rates by 40%.\n\nOpen to a brief 5-minute chat next Tuesday to see how ${company} compares?\n\nBest,\n[Your Name]`,
+      touch4_email_followup: `Hi ${firstName}, wanted to quickly bump this in case it got buried. Any interest in exploring this for ${company}'s ${roleFocus}, or is this not a priority right now?`,
+    };
+  }
 
+  // Enforce Not-Ai Humanizer across all 4 touches
   return {
-    touch1_linkedin_connect: `Hi ${firstName}, came across your work leading ${role.slice(0, 32)} at ${company}. Really impressed by the team's trajectory! Would love to connect and follow your journey.`,
-    touch2_linkedin_followup: `Hey ${firstName}, thanks for connecting! Quick question: how are you and the team at ${company} currently optimizing your ${roleFocus} workflows this quarter? Always love exchanging notes with peers in your space.`,
-    touch3_email_subject: relevantSubject,
-    touch3_email_body: `Hi ${firstName},\n\nSaw you're steering ${role} at ${company}. When speaking with other leaders in ${roleFocus}, the biggest bottleneck right now is ${pitch}.\n\nWe helped similar teams eliminate 8+ hours of manual overhead per rep while increasing pipeline response rates by 40%.\n\nOpen to a brief 5-minute chat next Tuesday to see how ${company} compares?\n\nBest,\n[Your Name]`,
-    touch4_email_followup: `Hi ${firstName}, wanted to quickly bump this in case it got buried. Any interest in exploring this for ${company}'s ${roleFocus}, or is this not a priority right now?`,
+    touch1_linkedin_connect: humanizeWithNotAi(rawSeq.touch1_linkedin_connect).cleanText,
+    touch2_linkedin_followup: humanizeWithNotAi(rawSeq.touch2_linkedin_followup).cleanText,
+    touch3_email_subject: humanizeWithNotAi(rawSeq.touch3_email_subject).cleanText,
+    touch3_email_body: humanizeWithNotAi(rawSeq.touch3_email_body).cleanText,
+    touch4_email_followup: humanizeWithNotAi(rawSeq.touch4_email_followup).cleanText,
   };
 }
 
@@ -177,7 +201,7 @@ async function callGeminiAPI(
   role: string
 ): Promise<GeneratedIcebreaker[]> {
   const roleFocus = extractRoleFocus(profile.headline);
-  const prompt = `You are an elite B2B cold outreach expert. Write 3 distinct, high-converting LinkedIn connection request messages (under 280 characters each, no hashtags, no generic fluff, sounds natural and human).
+  const prompt = `You are an elite B2B cold outreach expert. Write 3 distinct, high-converting LinkedIn connection request messages (under 280 characters each, no hashtags, no generic fluff, sounds natural and human, NO em dashes).
 Target Profile:
 - Name: ${profile.name} (First name: ${firstName})
 - Headline/Role: ${role} (Focus: ${roleFocus})
@@ -218,7 +242,7 @@ async function callOpenAIAPI(
   role: string
 ): Promise<GeneratedIcebreaker[]> {
   const roleFocus = extractRoleFocus(profile.headline);
-  const prompt = `You are an elite B2B cold outreach expert. Write 3 distinct, high-converting LinkedIn connection request messages (under 280 characters each, no hashtags, sounds natural).
+  const prompt = `You are an elite B2B cold outreach expert. Write 3 distinct, high-converting LinkedIn connection request messages (under 280 characters each, no hashtags, sounds natural, NO em dashes).
 Target: ${profile.name}, Role: ${role} (${roleFocus}), Company: ${company}.
 Return JSON array with "id", "tone", "label", "message".`;
 

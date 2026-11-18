@@ -3,10 +3,11 @@ import { generateIcebreakers, generateOutreachSequence, extractRoleFocus } from 
 import { getSettings, saveLead } from '../utils/storage';
 import { enrichContactInfo, ContactEnrichmentResult } from '../utils/emailPredictor';
 import { openDorkSearch } from '../utils/osintSearch';
+import { generateLinkedInPosts, generateLinkedInComments, LinkedInPostDraft, LinkedInCommentDraft } from '../utils/postCommentGenerator';
 import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } from '../types';
 
 (function () {
-  console.log('⚡ LinkedIn Outreach Copilot (Royal Navy Edition) initializing...');
+  console.log('⚡ LinkedIn Outreach Copilot + Not-Ai Humanizer initializing...');
 
   const CONTAINER_ID = 'outreach-copilot-root-host';
   if (document.getElementById(CONTAINER_ID)) {
@@ -15,7 +16,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
 
   // State
   let isOpen = false;
-  let activeTab: 'sequence' | 'osint' | 'icebreakers' = 'sequence';
+  let activeTab: 'sequence' | 'osint' | 'posts' | 'comments' | 'icebreakers' = 'sequence';
   let activeProfile: LinkedInProfile | null = null;
   let lastScannedUrl = '';
   let currentSequence: OutreachSequence | null = null;
@@ -25,6 +26,14 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
   let isGenerating = false;
   let isExtractingContact = false;
   let selectedSubjectIndex = 0;
+
+  // Not-Ai Posts & Comments state
+  let postTopic = '';
+  let currentPosts: LinkedInPostDraft[] = [];
+  let isGeneratingPosts = false;
+  let commentContext = '';
+  let currentComments: LinkedInCommentDraft[] = [];
+  let isGeneratingComments = false;
 
   // Load settings once
   getSettings().then((s) => {
@@ -92,7 +101,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       position: fixed;
       top: 64px;
       right: 24px;
-      width: 430px;
+      width: 440px;
       max-height: calc(100vh - 84px);
       background: #ffffff;
       border-radius: 16px;
@@ -345,10 +354,12 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       background: #f1f5f9;
       border-bottom: 1px solid #e2e8f0;
       margin-top: 10px;
+      overflow-x: auto;
     }
     .copilot-tab {
       flex: 1;
-      padding: 9px 6px;
+      min-width: 72px;
+      padding: 9px 4px;
       background: none;
       border: none;
       font-size: 11px;
@@ -358,6 +369,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       text-align: center;
       border-bottom: 2px solid transparent;
       transition: all 0.15s;
+      white-space: nowrap;
     }
     .copilot-tab.active {
       color: #0b192c;
@@ -450,6 +462,15 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       border-radius: 4px;
       letter-spacing: 0.03em;
     }
+    .copilot-notai-badge {
+      font-size: 9px;
+      font-weight: 800;
+      color: #166534;
+      background: #dcfce7;
+      border: 1px solid #86efac;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
     .copilot-step-btns {
       display: flex;
       gap: 6px;
@@ -521,6 +542,31 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       background: #1e3e62;
       color: #ffffff;
       border-color: #0b192c;
+    }
+
+    /* Not-Ai Post & Comment Elements */
+    .copilot-input-field {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-bottom: 8px;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .copilot-insert-btn {
+      background: linear-gradient(135deg, #0b192c 0%, #1e3e62 100%);
+      color: #ffffff;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .copilot-insert-btn:hover {
+      background: linear-gradient(135deg, #07101e 0%, #142b45 100%);
     }
 
     /* OSINT Dork Card */
@@ -669,26 +715,42 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
             <div class="copilot-title">
               <span>⚡</span>
               <span>Outreach Copilot</span>
-              <span class="copilot-title-badge">Royal Navy</span>
+              <span class="copilot-title-badge">Not-Ai Powered</span>
             </div>
             <button class="copilot-close-btn" id="copilot-close-btn">✕</button>
           </div>
           <div style="padding: 24px; text-align: center; color: #475569;">
             <div style="font-size: 32px; margin-bottom: 8px;">👤</div>
             <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px; color: #0b192c;">No Profile Detected</div>
-            <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0;">
-              Please open any LinkedIn profile page (e.g. <code>https://www.linkedin.com/in/...</code>) to verify contact data and generate outreach.
+            <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 16px;">
+              Open any LinkedIn profile page or use the Not-Ai Post & Comment tools below:
             </p>
+            <div style="display: flex; gap: 8px; justify-content: center;">
+              <button class="copilot-tab" id="open-posts-standalone" style="background: #1e3e62; color: #fff; border-radius: 6px; padding: 8px 12px; font-weight: 700;">
+                ✍️ Write a Post
+              </button>
+              <button class="copilot-tab" id="open-comments-standalone" style="background: #ffffff; border: 1px solid #cbd5e1; color: #1e3e62; border-radius: 6px; padding: 8px 12px; font-weight: 700;">
+                💬 Smart Comment
+              </button>
+            </div>
           </div>
           <div class="copilot-footer">
-            <span>Free Engine: DNS/MX + Google OSINT</span>
-            <span style="font-weight: 700; color: #1e3e62;">v2.2 Pro</span>
+            <span>Free Engine: DNS/MX + Not-Ai Skills</span>
+            <span style="font-weight: 700; color: #1e3e62;">v2.3 Pro</span>
           </div>
         </div>
       `;
       wrapper.querySelector('#copilot-close-btn')?.addEventListener('click', () => {
         isOpen = false;
         renderLauncher();
+      });
+      wrapper.querySelector('#open-posts-standalone')?.addEventListener('click', () => {
+        activeTab = 'posts';
+        renderDrawer();
+      });
+      wrapper.querySelector('#open-comments-standalone')?.addEventListener('click', () => {
+        activeTab = 'comments';
+        renderDrawer();
       });
       return;
     }
@@ -705,7 +767,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
           <div class="copilot-title">
             <span>⚡</span>
             <span>Outreach Copilot</span>
-            <span class="copilot-title-badge">100% Free Engine</span>
+            <span class="copilot-title-badge">Not-Ai Skills</span>
           </div>
           <button class="copilot-close-btn" id="copilot-close-btn" title="Close panel">✕</button>
         </div>
@@ -774,28 +836,40 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
           </div>
         </div>
 
-        <!-- Navigation Tabs -->
+        <!-- Navigation Tabs: Sequence, Not-Ai Posts, Not-Ai Comments, Google OSINT, Hooks -->
         <div class="copilot-tabs">
           <button class="copilot-tab ${activeTab === 'sequence' ? 'active' : ''}" id="tab-sequence">
-            🚀 4-Step Sequence
+            🚀 Outreach
+          </button>
+          <button class="copilot-tab ${activeTab === 'posts' ? 'active' : ''}" id="tab-posts">
+            ✍️ Post Drafter
+          </button>
+          <button class="copilot-tab ${activeTab === 'comments' ? 'active' : ''}" id="tab-comments">
+            💬 Commenter
           </button>
           <button class="copilot-tab ${activeTab === 'osint' ? 'active' : ''}" id="tab-osint">
-            🔎 Google OSINT (${contact?.osintDorks?.length || 5})
+            🔎 OSINT (${contact?.osintDorks?.length || 5})
           </button>
           <button class="copilot-tab ${activeTab === 'icebreakers' ? 'active' : ''}" id="tab-icebreakers">
             ✨ Hooks
           </button>
         </div>
 
-        <!-- Action Bar -->
-        <div class="copilot-actions">
-          <button class="copilot-btn-primary" id="copilot-generate-btn">
-            ${isGenerating ? '<span>⏳</span> Crafting Sequence...' : '<span>⚡</span> Generate Sequence'}
-          </button>
-          <button class="copilot-btn-secondary" id="copilot-save-btn">
-            <span>💾</span> Save Lead
-          </button>
-        </div>
+        ${
+          activeTab === 'sequence'
+            ? `
+          <!-- Action Bar for Sequence -->
+          <div class="copilot-actions">
+            <button class="copilot-btn-primary" id="copilot-generate-btn">
+              ${isGenerating ? '<span>⏳</span> Crafting Sequence...' : '<span>⚡</span> Generate Sequence'}
+            </button>
+            <button class="copilot-btn-secondary" id="copilot-save-btn">
+              <span>💾</span> Save Lead
+            </button>
+          </div>
+        `
+            : ''
+        }
 
         <!-- Body Content -->
         <div class="copilot-body">
@@ -807,6 +881,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
                 <div class="copilot-sequence-step">
                   <div class="copilot-step-header">
                     <span class="copilot-step-tag">Step 1: LinkedIn Connect Note</span>
+                    <span class="copilot-notai-badge">✓ Not-Ai Humanized</span>
                     <div class="copilot-step-btns">
                       <button class="copilot-step-btn" id="copy-touch1">Copy & Insert</button>
                     </div>
@@ -871,9 +946,100 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
                   <div style="font-size: 32px; margin-bottom: 6px;">🚀</div>
                   <div style="font-weight: 700; font-size: 14px; color: #0b192c; margin-bottom: 4px;">Multi-Channel Sequence</div>
                   <p style="margin: 0; font-size: 12px; color: #64748b; line-height: 1.4;">
-                    Click <b>"Generate Sequence"</b> to generate an enterprise 4-step LinkedIn & Cold Email sequence tailored specifically to <b>${p.name}</b>.
+                    Click <b>"Generate Sequence"</b> to create an enterprise 4-step LinkedIn & Cold Email sequence tailored specifically to <b>${p.name}</b>.
                   </p>
                 </div>
+              `
+              : activeTab === 'posts'
+              ? `
+                <!-- Not-Ai Post Drafter -->
+                <div style="margin-bottom: 12px;">
+                  <label style="display: block; font-size: 11px; font-weight: 700; color: #0b192c; margin-bottom: 4px;">
+                    What topic or experience would you like to post about?
+                  </label>
+                  <textarea class="copilot-input-field" id="post-topic-input" rows="2" placeholder="e.g. Scaling outbound SDR workflows, why most cold emails fail, closing our first 10 clients...">${postTopic}</textarea>
+                  <button class="copilot-btn-primary" id="generate-posts-btn" style="width: 100%; padding: 8px;">
+                    ${isGeneratingPosts ? '<span>⏳</span> Humanizing with Not-Ai...' : '<span>✍️</span> Generate 3 Human LinkedIn Posts'}
+                  </button>
+                </div>
+
+                ${
+                  currentPosts.length > 0
+                    ? currentPosts
+                        .map(
+                          (post) => `
+                    <div class="copilot-sequence-step">
+                      <div class="copilot-step-header">
+                        <span class="copilot-step-tag">${post.title}</span>
+                        <span class="copilot-notai-badge">Not-Ai: ${post.notAiScore}%</span>
+                        <div class="copilot-step-btns">
+                          <button class="copilot-insert-btn insert-post-btn" data-content="${encodeURIComponent(post.content)}">
+                            📝 Insert into Post
+                          </button>
+                          <button class="copilot-step-btn copy-post-btn" data-content="${encodeURIComponent(post.content)}">
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                      <p class="copilot-step-text">${post.content}</p>
+                    </div>
+                  `
+                        )
+                        .join('')
+                    : `
+                    <div style="text-align: center; padding: 20px 12px; color: #64748b; font-size: 11px;">
+                      Enter a topic above to generate 3 source-grounded posts (Story, Playbook, Contrarian) free of generic AI buzzwords.
+                    </div>
+                  `
+                }
+              `
+              : activeTab === 'comments'
+              ? `
+                <!-- Not-Ai Comment Suggestions -->
+                <div style="margin-bottom: 12px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <label style="font-size: 11px; font-weight: 700; color: #0b192c;">
+                      Post text to reply to:
+                    </label>
+                    <button id="scrape-visible-post-btn" style="background: none; border: none; color: #1e3e62; font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: underline;">
+                      ⚡ Grab Post on Screen
+                    </button>
+                  </div>
+                  <textarea class="copilot-input-field" id="comment-context-input" rows="2" placeholder="Paste post snippet or click 'Grab Post on Screen'...">${commentContext}</textarea>
+                  <button class="copilot-btn-primary" id="generate-comments-btn" style="width: 100%; padding: 8px;">
+                    ${isGeneratingComments ? '<span>⏳</span> Crafting Thoughtful Replies...' : '<span>💬</span> Generate 3 Authentic Comments'}
+                  </button>
+                </div>
+
+                ${
+                  currentComments.length > 0
+                    ? currentComments
+                        .map(
+                          (c) => `
+                    <div class="copilot-sequence-step">
+                      <div class="copilot-step-header">
+                        <span class="copilot-step-tag">${c.label}</span>
+                        <span class="copilot-notai-badge">Not-Ai: ${c.notAiScore}%</span>
+                        <div class="copilot-step-btns">
+                          <button class="copilot-insert-btn insert-comment-btn" data-content="${encodeURIComponent(c.content)}">
+                            💬 Insert Comment
+                          </button>
+                          <button class="copilot-step-btn copy-comment-btn" data-content="${encodeURIComponent(c.content)}">
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                      <p class="copilot-step-text">${c.content}</p>
+                    </div>
+                  `
+                        )
+                        .join('')
+                    : `
+                    <div style="text-align: center; padding: 20px 12px; color: #64748b; font-size: 11px;">
+                      Click <b>"Grab Post on Screen"</b> or paste any post to generate value-add comments that stand out from AI spam.
+                    </div>
+                  `
+                }
               `
               : activeTab === 'osint'
               ? `
@@ -931,8 +1097,8 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
 
         <!-- Footer -->
         <div class="copilot-footer">
-          <span>Method A: DNS DoH • Method B: Google OSINT</span>
-          <span style="font-weight: 700; color: #1e3e62;">Copilot v2.2</span>
+          <span>Engine: Not-Ai 4.0 Humanizer • DNS DoH</span>
+          <span style="font-weight: 700; color: #1e3e62;">Copilot v2.3</span>
         </div>
       </div>
     `;
@@ -945,6 +1111,16 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
 
     wrapper.querySelector('#tab-sequence')?.addEventListener('click', () => {
       activeTab = 'sequence';
+      renderDrawer();
+    });
+
+    wrapper.querySelector('#tab-posts')?.addEventListener('click', () => {
+      activeTab = 'posts';
+      renderDrawer();
+    });
+
+    wrapper.querySelector('#tab-comments')?.addEventListener('click', () => {
+      activeTab = 'comments';
       renderDrawer();
     });
 
@@ -996,6 +1172,108 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
           navigator.clipboard.writeText(query);
           target.innerText = '✓ Copied!';
           setTimeout(() => (target.innerText = '📋 Copy Query'), 2000);
+        }
+      });
+    });
+
+    // Generate Not-Ai Posts
+    wrapper.querySelector('#generate-posts-btn')?.addEventListener('click', async () => {
+      if (isGeneratingPosts) return;
+      const inputEl = wrapper.querySelector('#post-topic-input') as HTMLTextAreaElement;
+      postTopic = inputEl?.value || '';
+      isGeneratingPosts = true;
+      renderDrawer();
+
+      try {
+        const s = await getSettings();
+        currentPosts = await generateLinkedInPosts(postTopic, s);
+      } catch (e) {
+        console.error('Error generating posts:', e);
+      } finally {
+        isGeneratingPosts = false;
+        renderDrawer();
+      }
+    });
+
+    // Insert Post into LinkedIn's active post creator
+    wrapper.querySelectorAll('.insert-post-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLButtonElement;
+        const content = decodeURIComponent(target.getAttribute('data-content') || '');
+        if (content) {
+          navigator.clipboard.writeText(content);
+          const inserted = insertIntoLinkedInPostEditor(content);
+          target.innerText = inserted ? '✓ Inserted!' : '✓ Copied!';
+          setTimeout(() => (target.innerText = '📝 Insert into Post'), 2000);
+        }
+      });
+    });
+
+    // Copy Post
+    wrapper.querySelectorAll('.copy-post-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLButtonElement;
+        const content = decodeURIComponent(target.getAttribute('data-content') || '');
+        if (content) {
+          navigator.clipboard.writeText(content);
+          target.innerText = '✓ Copied!';
+          setTimeout(() => (target.innerText = 'Copy'), 2000);
+        }
+      });
+    });
+
+    // Grab Post from screen for commenting
+    wrapper.querySelector('#scrape-visible-post-btn')?.addEventListener('click', () => {
+      const scraped = scrapeVisibleLinkedInPostText();
+      if (scraped) {
+        commentContext = scraped;
+        const inputEl = wrapper.querySelector('#comment-context-input') as HTMLTextAreaElement;
+        if (inputEl) inputEl.value = scraped;
+      }
+    });
+
+    // Generate Not-Ai Comments
+    wrapper.querySelector('#generate-comments-btn')?.addEventListener('click', async () => {
+      if (isGeneratingComments) return;
+      const inputEl = wrapper.querySelector('#comment-context-input') as HTMLTextAreaElement;
+      commentContext = inputEl?.value || '';
+      isGeneratingComments = true;
+      renderDrawer();
+
+      try {
+        const s = await getSettings();
+        currentComments = await generateLinkedInComments(commentContext, s);
+      } catch (e) {
+        console.error('Error generating comments:', e);
+      } finally {
+        isGeneratingComments = false;
+        renderDrawer();
+      }
+    });
+
+    // Insert Comment into active LinkedIn comment box
+    wrapper.querySelectorAll('.insert-comment-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLButtonElement;
+        const content = decodeURIComponent(target.getAttribute('data-content') || '');
+        if (content) {
+          navigator.clipboard.writeText(content);
+          const inserted = insertIntoLinkedInCommentEditor(content);
+          target.innerText = inserted ? '✓ Inserted!' : '✓ Copied!';
+          setTimeout(() => (target.innerText = '💬 Insert Comment'), 2000);
+        }
+      });
+    });
+
+    // Copy Comment
+    wrapper.querySelectorAll('.copy-comment-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLButtonElement;
+        const content = decodeURIComponent(target.getAttribute('data-content') || '');
+        if (content) {
+          navigator.clipboard.writeText(content);
+          target.innerText = '✓ Copied!';
+          setTimeout(() => (target.innerText = 'Copy'), 2000);
         }
       });
     });
@@ -1177,6 +1455,76 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
     }
   }
 
+  /**
+   * Scrapes visible post update on LinkedIn feed to help user comment quickly
+   */
+  function scrapeVisibleLinkedInPostText(): string {
+    const selectors = [
+      '.feed-shared-update-v2__description-wrapper .update-components-text',
+      '.feed-shared-update-v2 .feed-shared-text',
+      '.feed-shared-update-v2 .break-words',
+      'div[data-ad-preview="feed-update"] .feed-shared-text',
+      'main article .feed-shared-text',
+    ];
+
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      const text = el?.textContent?.trim();
+      if (text && text.length > 20) {
+        return text.slice(0, 450);
+      }
+    }
+    return '';
+  }
+
+  /**
+   * Inserts text into LinkedIn's Post Composer modal
+   */
+  function insertIntoLinkedInPostEditor(text: string): boolean {
+    const selectors = [
+      'div.share-creation-state__text-editor div.ql-editor',
+      'div.editor-content div.ql-editor',
+      'div[data-placeholder*="talk about"]',
+      'div.ql-editor[role="textbox"]',
+    ];
+
+    for (const sel of selectors) {
+      const editor = document.querySelector<HTMLElement>(sel);
+      if (editor) {
+        editor.focus();
+        document.execCommand('selectAll', false);
+        document.execCommand('insertText', false, text);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Inserts text into LinkedIn's active Comment editor
+   */
+  function insertIntoLinkedInCommentEditor(text: string): boolean {
+    const selectors = [
+      'div.comments-comment-box__editor div.ql-editor',
+      'form.comments-comment-box div.ql-editor',
+      'div.comments-comment-texteditor div.ql-editor',
+      'div[data-placeholder="Add a comment…"]',
+    ];
+
+    for (const sel of selectors) {
+      const editor = document.querySelector<HTMLElement>(sel);
+      if (editor) {
+        editor.focus();
+        document.execCommand('selectAll', false);
+        document.execCommand('insertText', false, text);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Pure URL check with zero automated clicking
   async function scanPageOnce() {
     const rawUrl = window.location.href.split('?')[0];
@@ -1221,7 +1569,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       }
     }, 1500);
 
-    console.log('⚡ LinkedIn Outreach Copilot (Royal Navy Edition) ready.');
+    console.log('⚡ LinkedIn Outreach Copilot + Not-Ai Humanizer ready.');
   }
 
   if (document.readyState === 'loading') {
