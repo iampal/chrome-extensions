@@ -2,6 +2,7 @@ import { parseLinkedInProfile, isLinkedInProfileUrl } from '../utils/linkedinPar
 import { generateIcebreakers, generateOutreachSequence } from '../utils/aiGenerator';
 import { getSettings, saveLead } from '../utils/storage';
 import { enrichContactInfo, ContactEnrichmentResult } from '../utils/emailPredictor';
+import { openDorkSearch } from '../utils/osintSearch';
 import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } from '../types';
 
 (function () {
@@ -14,7 +15,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
 
   // State
   let isOpen = false;
-  let activeTab: 'sequence' | 'icebreakers' = 'sequence';
+  let activeTab: 'sequence' | 'osint' | 'icebreakers' = 'sequence';
   let activeProfile: LinkedInProfile | null = null;
   let lastScannedUrl = '';
   let currentSequence: OutreachSequence | null = null;
@@ -213,7 +214,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       background: #dcfce7;
       color: #15803d;
     }
-    .copilot-badge-pattern {
+    .copilot-badge-mx {
       font-size: 10px;
       padding: 2px 6px;
       border-radius: 4px;
@@ -291,10 +292,10 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
     }
     .copilot-tab {
       flex: 1;
-      padding: 9px 12px;
+      padding: 9px 8px;
       background: none;
       border: none;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       color: #64748b;
       cursor: pointer;
@@ -414,6 +415,44 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       white-space: pre-wrap;
     }
 
+    /* OSINT Dork Card */
+    .copilot-dork-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      background: #ffffff;
+    }
+    .copilot-dork-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #0f172a;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .copilot-dork-desc {
+      font-size: 11px;
+      color: #64748b;
+      margin: 4px 0 8px;
+    }
+    .copilot-dork-btn {
+      background: #0a66c2;
+      color: #ffffff;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .copilot-dork-btn:hover {
+      background: #004182;
+    }
+
     .copilot-footer {
       padding: 8px 18px;
       border-top: 1px solid #f1f3f5;
@@ -464,12 +503,12 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
             <div style="font-size: 32px; margin-bottom: 8px;">👤</div>
             <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px; color: #0f172a;">No Profile Detected</div>
             <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0;">
-              Please open any LinkedIn profile page (e.g. <code>https://www.linkedin.com/in/...</code>) to extract contact info and generate sequences.
+              Please open any LinkedIn profile page (e.g. <code>https://www.linkedin.com/in/...</code>) to verify contact info and generate sequences.
             </p>
           </div>
           <div class="copilot-footer">
             <span>Ready for LinkedIn profiles</span>
-            <span style="font-weight: 600; color: #0a66c2;">Copilot v2.0</span>
+            <span style="font-weight: 600; color: #0a66c2;">Copilot v2.1</span>
           </div>
         </div>
       `;
@@ -489,7 +528,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
         <div class="copilot-header">
           <div class="copilot-title">
             <span>⚡</span>
-            <span>Outreach Copilot</span>
+            <span>Outreach Copilot (Free Engine)</span>
           </div>
           <button class="copilot-close-btn" id="copilot-close-btn">✕</button>
         </div>
@@ -508,18 +547,16 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
           </div>
         </div>
 
-        <!-- Contact Intelligence (Real Verified vs Pattern) -->
+        <!-- Contact Intelligence (Method A: DNS MX Verification) -->
         <div class="copilot-contact-card">
           <div class="copilot-contact-header">
             <div class="copilot-contact-title">🎯 Contact Intelligence</div>
             ${
               contact?.confidence === 'verified_linkedin'
                 ? '<span class="copilot-badge-verified">✓ LINKEDIN VERIFIED</span>'
-                : contact?.confidence === 'verified_api'
-                ? '<span class="copilot-badge-verified">✓ API VERIFIED</span>'
-                : contact?.confidence === 'pattern_guess'
-                ? '<span class="copilot-badge-pattern">⚡ CORPORATE PATTERN</span>'
-                : '<span class="copilot-badge-pattern">ANALYZED</span>'
+                : contact?.mxRecord?.hasValidMX
+                ? `<span class="copilot-badge-mx">✓ MX: ${contact.mxRecord.provider}</span>`
+                : '<span class="copilot-badge-mx">⚡ DOMAIN PATTERN</span>'
             }
           </div>
 
@@ -558,15 +595,18 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
           <button class="copilot-tab ${activeTab === 'sequence' ? 'active' : ''}" id="tab-sequence">
             🚀 4-Step Sequence
           </button>
+          <button class="copilot-tab ${activeTab === 'osint' ? 'active' : ''}" id="tab-osint">
+            🔎 Google OSINT (Free)
+          </button>
           <button class="copilot-tab ${activeTab === 'icebreakers' ? 'active' : ''}" id="tab-icebreakers">
-            ✨ Quick Hooks (${currentHooks.length})
+            ✨ Hooks
           </button>
         </div>
 
         <!-- Action Bar -->
         <div class="copilot-actions">
           <button class="copilot-btn-primary" id="copilot-generate-btn">
-            ${isGenerating ? '<span>⏳</span> Crafting Campaign...' : '<span>⚡</span> Generate Sequence'}
+            ${isGenerating ? '<span>⏳</span> Crafting...' : '<span>⚡</span> Generate Sequence'}
           </button>
           <button class="copilot-btn-secondary" id="copilot-save-btn">
             <span>💾</span> Save Lead
@@ -628,11 +668,33 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
                 : `
                 <div style="text-align: center; padding: 24px 12px; color: #94a3b8;">
                   <div style="font-size: 30px; margin-bottom: 6px;">🚀</div>
-                  <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">Full Multi-Channel Sequence</div>
+                  <div style="font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px;">Multi-Channel Sequence</div>
                   <p style="margin: 0; font-size: 12px; color: #64748b;">
                     Click <b>"Generate Sequence"</b> to create an automated 4-step LinkedIn & Cold Email sequence tailored to <b>${p.name}</b>.
                   </p>
                 </div>
+              `
+              : activeTab === 'osint'
+              ? `
+                <div style="margin-bottom: 10px; font-size: 12px; color: #475569;">
+                  <b>Method B: Public Web Search Dorking</b><br/>
+                  Find publicly indexed emails, PDFs, and direct contact details without paying any data broker:
+                </div>
+                ${(contact?.osintDorks || [])
+                  .map(
+                    (dork) => `
+                  <div class="copilot-dork-card">
+                    <div class="copilot-dork-title">
+                      <span>${dork.title}</span>
+                      <button class="copilot-dork-btn" data-url="${encodeURIComponent(dork.url)}">
+                        🔍 Search
+                      </button>
+                    </div>
+                    <div class="copilot-dork-desc">${dork.description}</div>
+                  </div>
+                `
+                  )
+                  .join('')}
               `
               : currentHooks.length > 0
               ? currentHooks
@@ -661,8 +723,8 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
 
         <!-- Footer -->
         <div class="copilot-footer">
-          <span>Auto-injects to message box & Gmail</span>
-          <span style="font-weight: 600; color: #0a66c2;">Outreach Copilot v2.0</span>
+          <span>Method A: DNS MX Verified • Method B: OSINT</span>
+          <span style="font-weight: 600; color: #0a66c2;">Copilot v2.1</span>
         </div>
       </div>
     `;
@@ -678,9 +740,23 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
       renderDrawer();
     });
 
+    wrapper.querySelector('#tab-osint')?.addEventListener('click', () => {
+      activeTab = 'osint';
+      renderDrawer();
+    });
+
     wrapper.querySelector('#tab-icebreakers')?.addEventListener('click', () => {
       activeTab = 'icebreakers';
       renderDrawer();
+    });
+
+    // OSINT Search Buttons
+    wrapper.querySelectorAll('.copilot-dork-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLButtonElement;
+        const url = decodeURIComponent(target.getAttribute('data-url') || '');
+        if (url) openDorkSearch(url);
+      });
     });
 
     // Manual Contact Info click (ONLY runs when explicitly clicked by user)
@@ -761,7 +837,7 @@ import { GeneratedIcebreaker, LinkedInProfile, OutreachSequence, UserSettings } 
         email: contact?.email,
         phone: contact?.phone,
         emailConfidence: contact?.confidence,
-        deliverabilityGrade: contact?.confidence === 'verified_linkedin' ? 'A+ (LinkedIn Verified)' : 'A (Corporate Pattern)',
+        deliverabilityGrade: contact?.deliverabilityGrade || 'MX Verified',
         sequence: currentSequence || undefined,
         profileUrl: p.profileUrl,
         selectedIcebreaker: currentSequence?.touch1_linkedin_connect || currentHooks[0]?.message,
