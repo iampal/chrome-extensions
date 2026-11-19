@@ -1,15 +1,22 @@
 {
   "name": "linkedin-outreach-copilot",
-  "version": "1.0.0",
+  "version": "2.3.0",
   "main": "index.js",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "watch": "node scripts/build.mjs --watch"
+    "watch": "node scripts/build.mjs --watch",
+    "package": "node scripts/package.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "keywords": [
+    "linkedin",
+    "cold-outreach",
+    "osint",
+    "sales-automation",
+    "email-verification"
+  ],
+  "author": "Ankush Pal",
+  "license": "MIT",
+  "description": "AI LinkedIn outreach, free DNS/MX email verification, Google OSINT dorking, humanized post drafter & smart commenter.",
   "dependencies": {
     "lucide-react": "^1.75.0",
     "react": "^19.3.1",
